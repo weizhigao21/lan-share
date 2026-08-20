@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# 运行时数据（含设备与消息，不入库）
+lan_share.db
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# WorkBuddy 本地数据
+.workbuddy/

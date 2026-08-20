@@ -1,0 +1,13 @@
+[project]
+name = "lan-share"
+version = "0.2.5"
+description = "局域网设备信息互发系统"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

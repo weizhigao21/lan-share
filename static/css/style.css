@@ -1,0 +1,507 @@
+/* 局域网信息互发 — 微信式聊天风格（M3） */
+:root {
+  --bg: #ededed;
+  --surface: #ffffff;
+  --primary: #1d9e75;
+  --primary-dark: #0f6e56;
+  --text: #2c2c2a;
+  --text-2: #888780;
+  --border: #e0e0e0;
+  --online: #3b6d11;
+  --offline: #b4b2a9;
+  --danger: #a32d2d;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* 顶栏 */
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+  display: inline-block;
+}
+
+.app-name {
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--offline);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.conn-dot.connected {
+  background: var(--online);
+}
+
+.ip-addr {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.my-device {
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 主区域 */
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.view {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* 注册卡片 */
+.card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 28px 24px;
+  max-width: 420px;
+  margin: 8vh auto 0;
+  align-self: flex-start;
+}
+
+.card h2 {
+  font-size: 17px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.hint {
+  color: var(--text-2);
+  font-size: 13px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  margin-bottom: 12px;
+}
+
+input[type="text"]:focus {
+  border-color: var(--primary);
+}
+
+input:disabled {
+  opacity: 0.5;
+}
+
+.btn-primary {
+  padding: 10px 18px;
+  font-size: 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn-primary:active {
+  background: var(--primary-dark);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-ghost {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.fatal-error {
+  background: #fcebeb;
+  border: 1px solid #f09595;
+  color: #a32d2d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  margin: 16px 0;
+}
+
+/* 设备面板 */
+.device-panel {
+  width: 260px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  flex-direction: column;
+  flex-shrink: 0;
+  display: flex;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  flex-shrink: 0;
+}
+
+.list-header h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.device-list {
+  list-style: none;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.device-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.device-item:hover {
+  background: #fafafa;
+}
+
+.device-item.active {
+  background: #e6f1fb;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  background: var(--online);
+}
+
+.status-dot.offline {
+  background: var(--offline);
+}
+
+.device-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-name em {
+  font-style: normal;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.device-ip {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+.device-state {
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.device-state.online {
+  color: var(--online);
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* 聊天面板 */
+.chat-panel {
+  flex: 1;
+  flex-direction: column;
+  display: flex;
+  min-width: 0;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.btn-back {
+  width: 34px;
+  height: 34px;
+  font-size: 22px;
+  line-height: 1;
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+}
+
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-peer-name {
+  font-weight: 500;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 消息区 */
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.empty-hint {
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13px;
+  margin-top: 60px;
+}
+
+.sys-tip {
+  text-align: center;
+  color: var(--text-2);
+  font-size: 12px;
+  margin: 12px 0;
+}
+
+.msg {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.msg.mine {
+  justify-content: flex-end;
+}
+
+.msg.theirs {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 70%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.msg.mine .bubble {
+  background: var(--primary);
+  color: #fff;
+  border-top-right-radius: 4px;
+}
+
+.msg.theirs .bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top-left-radius: 4px;
+}
+
+/* 输入条 */
+.input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.input-bar input {
+  flex: 1;
+  margin: 0;
+}
+
+.input-bar .btn-primary {
+  flex-shrink: 0;
+}
+
+/* 轻量 toast 提示（替代底部状态栏） */
+.toast {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(44, 44, 42, 0.92);
+  color: #fff;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  z-index: 100;
+  max-width: 80vw;
+  text-align: center;
+  opacity: 1;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.toast.hide {
+  opacity: 0;
+}
+
+/* 手机端（窄屏）：列表页 ↔ 聊天页两级导航 */
+@media (max-width: 767px) {
+  .app-name {
+    display: none;
+  }
+
+  .topbar {
+    padding: 10px 12px;
+  }
+
+  .ip-addr {
+    font-size: 11px;
+  }
+
+  .device-panel {
+    width: 100%;
+    border-right: none;
+  }
+
+  .chat-panel {
+    display: none;
+  }
+
+  body.chatting .device-panel {
+    display: none;
+  }
+
+  body.chatting .chat-panel {
+    display: flex;
+  }
+
+  .bubble {
+    max-width: 82%;
+  }
+}

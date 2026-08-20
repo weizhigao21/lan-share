@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>局域网信息互发</title>
+  <link rel="stylesheet" href="/css/style.css?v=0.2.5">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo-dot"></span>
+      <span class="app-name">局域网信息互发</span>
+    </div>
+    <div class="topbar-right">
+      <span id="connDot" class="conn-dot" title="实时通道状态"></span>
+      <span id="accessUrl" class="ip-addr"></span>
+      <span id="myDeviceLabel" class="my-device">未注册</span>
+      <button id="renameBtn" class="btn-ghost hidden">改名</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- 首次进入：设置设备名称 -->
+    <section id="registerView" class="view hidden">
+      <div class="card">
+        <h2>加入局域网信息互发</h2>
+        <p class="hint">输入一个设备名称，其他设备将看到这个名字。内部唯一 ID 不会显示。</p>
+        <input id="deviceNameInput" type="text" maxlength="32" placeholder="例如：我的手机" autocomplete="off">
+        <button id="registerBtn" class="btn-primary btn-block">加入</button>
+        <p id="registerError" class="error hidden"></p>
+      </div>
+    </section>
+
+    <!-- 主界面：设备面板 + 聊天面板 -->
+    <div id="appView" class="view hidden">
+      <!-- 左侧/首页：设备列表 -->
+      <section id="devicePanel" class="panel device-panel">
+        <div class="list-header">
+          <h2>设备 <span id="onlineCount" class="muted"></span></h2>
+          <button id="refreshBtn" class="btn-ghost">刷新</button>
+        </div>
+        <ul id="deviceList" class="device-list"></ul>
+      </section>
+
+      <!-- 右侧/聊天页：聊天窗口 -->
+      <section id="chatPanel" class="panel chat-panel">
+        <div id="chatHeader" class="chat-header">
+          <button id="backBtn" class="btn-back hidden">‹</button>
+          <div class="chat-title">
+            <span id="chatPeerName" class="chat-peer-name">选择设备开始聊天</span>
+            <span id="chatPeerState" class="muted"></span>
+          </div>
+          <button id="clearHistoryBtn" class="btn-ghost">清空</button>
+        </div>
+        <div id="messageList" class="message-list">
+          <div class="empty-hint">从左侧选择一台设备开始聊天</div>
+        </div>
+        <div id="inputBar" class="input-bar">
+          <input id="messageInput" type="text" maxlength="2000" placeholder="输入字符消息…" autocomplete="off" disabled>
+          <button id="sendBtn" class="btn-primary" disabled>发送</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/api.js?v=0.2.5"></script>
+  <script src="/js/ws.js?v=0.2.5"></script>
+  <script src="/js/app.js?v=0.2.5"></script>
+</body>
+</html>
