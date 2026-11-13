@@ -1,12 +1,16 @@
 [project]
 name = "lan-share"
-version = "0.2.5"
+version = "0.4.0"
 description = "局域网设备信息互发系统"
 requires-python = ">=3.10"
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 用 Depends/File/Form 作为默认参数值注入依赖，不是可变的默认参数
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -54,8 +54,25 @@ class MessageSend(BaseModel):
         return value
 
 
+class AttachmentOut(BaseModel):
+    """附件元信息（不含服务端磁盘路径）。
+
+    expires_at 是自动清理时间；为 None 表示永久保留（保留期配置为 0）。
+    """
+
+    id: str
+    name: str
+    size: int
+    content_type: str
+    url: str
+    expires_at: datetime | None = None
+
+
 class MessageOut(BaseModel):
-    """消息响应。"""
+    """消息响应。
+
+    msg_type='file' 时 attachment 携带附件信息；文本消息为 None。
+    """
 
     id: int
     sender_id: str
@@ -64,3 +81,4 @@ class MessageOut(BaseModel):
     msg_type: str
     status: str
     created_at: datetime
+    attachment: AttachmentOut | None = None

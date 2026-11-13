@@ -4,8 +4,11 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# 运行时数据（含设备与消息，不入库）
+# 运行时数据（含设备与消息、上传附件，不入库）
 lan_share.db
+uploads/
+server.log
+server.pid
 
 # 虚拟环境
 .venv/

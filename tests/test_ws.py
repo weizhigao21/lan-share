@@ -1,5 +1,6 @@
 """WebSocket 实时通道测试：在线推送 / 离线补发 / 心跳 / 未注册拒绝。"""
 import pytest
+from starlette.websockets import WebSocketDisconnect
 
 
 def _register(client, name):
@@ -7,9 +8,11 @@ def _register(client, name):
 
 
 def test_ws_rejects_unknown_device(client):
-    with pytest.raises(Exception):
-        with client.websocket_connect("/api/v1/ws?device_id=nope"):
-            pass
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/api/v1/ws?device_id=nope"),
+    ):
+        pass
 
 
 def test_ping_pong(client):

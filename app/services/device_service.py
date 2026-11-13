@@ -1,10 +1,17 @@
-"""设备业务逻辑：注册、查询、改名。"""
+"""设备业务逻辑：注册、查询、改名、身份恢复与清理。"""
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from fastapi import Response
+
 from app.config import settings
+
+# 设备身份 Cookie：localStorage 被清空/换浏览器时，靠它把身份认回来，
+# 避免每次打开页面都注册出一个新的同名设备。
+DEVICE_COOKIE = "lan_device_id"
+DEVICE_COOKIE_MAX_AGE = 365 * 24 * 3600
 
 
 def _now_iso() -> str:
@@ -67,6 +74,29 @@ def list_devices(db: sqlite3.Connection) -> list[dict[str, Any]]:
     ]
 
 
+def find_by_ip(db: sqlite3.Connection, ip: str | None) -> dict[str, Any] | None:
+    """按来源 IP 找回设备（局域网内每台设备 IP 唯一）。
+
+    同 IP 有多条记录时取最近活跃的那台，用于清过缓存的手机自动认回身份。
+
+    Args:
+        db: 数据库连接。
+        ip: 请求来源 IP。
+
+    Returns:
+        设备字典；找不到返回 None。
+    """
+    if not ip:
+        return None
+    row = db.execute(
+        "SELECT * FROM devices WHERE ip = ? ORDER BY last_seen DESC LIMIT 1",
+        (ip,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {**dict(row), "is_online": _is_online(row["last_seen"])}
+
+
 def get_device(db: sqlite3.Connection, device_id: str) -> dict[str, Any] | None:
     """按 ID 查询单个设备。"""
     row = db.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
@@ -99,3 +129,30 @@ def touch_device(db: sqlite3.Connection, device_id: str, ip: str | None = None) 
             "UPDATE devices SET last_seen = ? WHERE id = ?",
             (_now_iso(), device_id),
         )
+
+
+def delete_device(db: sqlite3.Connection, device_id: str) -> bool:
+    """删除设备记录（消息与附件的清理由调用方负责）。
+
+    Returns:
+        是否删除成功（设备不存在返回 False）。
+    """
+    cur = db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    return cur.rowcount > 0
+
+
+def set_device_cookie(response: Response, device_id: str) -> None:
+    """把设备 ID 写入 Cookie，供下次免注册恢复身份。"""
+    response.set_cookie(
+        key=DEVICE_COOKIE,
+        value=device_id,
+        max_age=DEVICE_COOKIE_MAX_AGE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_device_cookie(response: Response) -> None:
+    """清除设备身份 Cookie（身份失效、重新注册前调用）。"""
+    response.delete_cookie(key=DEVICE_COOKIE, path="/")

@@ -18,7 +18,7 @@ class WsClient {
     this.ws.onopen = () => {
       this.opened = true;
       this.retryDelay = 1000;
-      this.handlers.onStatus?.("connected");
+      if (this.handlers.onStatus) this.handlers.onStatus("connected");
       // 心跳：每 30s 一次，服务端 90s 无消息会断开
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = setInterval(() => {
@@ -32,20 +32,20 @@ class WsClient {
       let msg;
       try {
         msg = JSON.parse(e.data);
-      } catch {
+      } catch (err) {
         return;
       }
-      this.handlers.onMessage?.(msg);
+      if (this.handlers.onMessage) this.handlers.onMessage(msg);
     };
 
     this.ws.onclose = () => {
       clearInterval(this.heartbeatTimer);
-      this.handlers.onStatus?.("disconnected");
+      if (this.handlers.onStatus) this.handlers.onStatus("disconnected");
       if (this.manualClose) return;
       if (!this.opened) {
         // 握手阶段即失败：服务端可达但拒绝了连接（如设备 id 失效），
         // 不再盲目重连，交由 onRejected 决策（验证后重置身份或重建连接）
-        this.handlers.onRejected?.();
+        if (this.handlers.onRejected) this.handlers.onRejected();
         return;
       }
       // 已建立过连接后的断线 → 指数退避重连

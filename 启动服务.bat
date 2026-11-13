@@ -4,12 +4,12 @@ title 局域网信息互发 - 启动器
 cd /d "%~dp0"
 
 echo ============================================
-echo   局域网信息互发 v0.2.3
+echo   局域网信息互发 v0.4.0
 echo ============================================
 echo.
 
 rem 首次运行自动安装依赖
-python -c "import fastapi, uvicorn, httpx" >nul 2>&1
+python -c "import fastapi, uvicorn, httpx, multipart" >nul 2>&1
 if errorlevel 1 (
     echo [提示] 检测到依赖未安装，正在自动安装，请稍候...
     pip install -r requirements.txt

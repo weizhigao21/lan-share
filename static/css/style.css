@@ -83,6 +83,17 @@ body {
   background: var(--online);
 }
 
+/* 实时通道断线横幅：断开期间常驻提示，恢复后自动隐藏 */
+.conn-banner {
+  flex-shrink: 0;
+  background: #fff4e5;
+  border-bottom: 1px solid #f0b775;
+  color: #8a4b09;
+  font-size: 12px;
+  text-align: center;
+  padding: 7px 12px;
+}
+
 .ip-addr {
   font-size: 12px;
   color: var(--text-2);
@@ -95,6 +106,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* 主区域 */
@@ -116,9 +128,15 @@ body {
   background: var(--surface);
   border-radius: 12px;
   padding: 28px 24px;
+  width: 100%;
   max-width: 420px;
   margin: 8vh auto 0;
   align-self: flex-start;
+}
+
+/* 注册页在窄屏下留出左右边距，避免卡片溢出被裁 */
+#registerView {
+  padding: 0 16px;
 }
 
 .card h2 {
@@ -191,14 +209,27 @@ input:disabled {
   margin-top: 10px;
 }
 
-.fatal-error {
-  background: #fcebeb;
-  border: 1px solid #f09595;
-  color: #a32d2d;
+/* 脚本异常提示条：贴在底部、可点击关闭，不遮挡主界面 */
+.script-warning {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 120;
+  background: #fff4e5;
+  border: 1px solid #f0b775;
+  color: #8a4b09;
   border-radius: 8px;
-  padding: 12px 14px;
-  font-size: 13px;
-  margin: 16px 0;
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.script-warning.hide {
+  display: none;
 }
 
 /* 设备面板 */
@@ -249,8 +280,9 @@ input:disabled {
   background: #fafafa;
 }
 
+/* 选中态用主色系淡绿，与气泡 / 按钮保持同一色相（原微信蓝残留） */
 .device-item.active {
-  background: #e6f1fb;
+  background: #e3f3ed;
 }
 
 .status-dot {
@@ -316,6 +348,36 @@ input:disabled {
 
 .device-state.online {
   color: var(--online);
+}
+
+/* 移除离线设备（清理重复身份） */
+.device-remove {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.device-remove:hover {
+  background: #fcebeb;
+  border-color: #f09595;
+  color: #a32d2d;
+}
+
+.device-remove:active {
+  transform: scale(0.9);
+}
+
+.device-remove:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 .empty {
@@ -470,7 +532,262 @@ input:disabled {
   opacity: 0;
 }
 
-/* 手机端（窄屏）：列表页 ↔ 聊天页两级导航 */
+/* 附件按钮 */
+.btn-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.btn-icon:hover:not(:disabled) {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.btn-icon:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 上传进度条 */
+.upload-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.upload-label {
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  transition: width 0.15s linear;
+}
+
+.upload-bar .btn-ghost {
+  padding: 3px 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* 图片/视频/音频消息：媒体本身即气泡内容，无需再套文件卡 */
+.media-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.img-msg {
+  display: block;
+  max-width: min(240px, 100%);
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: zoom-in;
+}
+
+.video-msg {
+  display: block;
+  width: min(280px, 56vw);
+  max-width: 100%;
+  border-radius: 8px;
+  background: #000;
+}
+
+.audio-msg {
+  display: block;
+  width: min(300px, 64vw);
+  max-width: 100%;
+}
+
+.media-meta {
+  max-width: 260px;
+  word-break: break-all;
+}
+
+/* 图片灯箱：全屏看原图，点击任意处关闭 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.88);
+  cursor: zoom-out;
+}
+
+.lightbox.hidden {
+  display: none;
+}
+
+.lightbox img {
+  max-width: 96vw;
+  max-height: 92vh;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+/* 文件消息气泡：去掉气泡底色与边框，白卡本身就是视觉主体（绿环占位且不美观） */
+.msg.mine .bubble.file-bubble,
+.msg.theirs .bubble.file-bubble {
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+}
+
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 210px;
+  max-width: 300px;
+  padding: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.97);
+  color: var(--text);
+  white-space: normal;
+}
+
+.file-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.file-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-all;
+  max-height: 2.8em;
+  overflow: hidden;
+}
+
+.file-meta {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+/* 已自动清理的文件：气泡与卡片整体降饱和，一眼看出不可再下载 */
+.bubble.expired-bubble,
+.msg.mine .bubble.expired-bubble,
+.msg.theirs .bubble.expired-bubble {
+  padding: 6px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--text-2);
+}
+
+.file-card.file-expired {
+  background: transparent;
+  border-color: transparent;
+  min-width: 180px;
+  opacity: 0.85;
+}
+
+.file-card.file-expired .file-name {
+  color: var(--text-2);
+  text-decoration: line-through;
+}
+
+.file-download {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.7;
+  background: transparent;
+  color: var(--primary-dark);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.file-download:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* 脚本加载失败兜底提示 */
+.boot-error {
+  max-width: 420px;
+  margin: 20px auto;
+  padding: 16px 18px;
+  border: 1px solid #f09595;
+  border-radius: 10px;
+  background: #fcebeb;
+  color: #a32d2d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.boot-error strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.boot-error p {
+  margin: 0;
+}
+
+/* 拖拽文件到消息区 */
+.message-list.drag-over {
+  outline: 2px dashed var(--primary);
+  outline-offset: -8px;
+  background: #e8f6f1;
+}
+
+/* 手机端（窄屏）：列表页 ↔ 聊天页两级导航 + 触控尺寸（原两个 media 块合并） */
 @media (max-width: 767px) {
   .app-name {
     display: none;
@@ -503,5 +820,28 @@ input:disabled {
 
   .bubble {
     max-width: 82%;
+  }
+
+  .btn-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .file-card {
+    min-width: 0;
+    width: 72vw;
+    max-width: 280px;
+  }
+
+  .upload-label {
+    max-width: 34%;
+  }
+
+  /* 触屏：✕ 移除按钮放大到 44px 触控标准 */
+  .device-remove {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+    line-height: 42px;
   }
 }

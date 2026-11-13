@@ -21,11 +21,27 @@ CREATE TABLE IF NOT EXISTS messages (
     content      TEXT NOT NULL,
     msg_type     TEXT NOT NULL DEFAULT 'text',
     status       TEXT NOT NULL DEFAULT 'pending',
-    created_at   TEXT NOT NULL
+    created_at   TEXT NOT NULL,
+    attachment_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id            TEXT PRIMARY KEY,
+    original_name TEXT NOT NULL,
+    stored_name   TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    content_type  TEXT NOT NULL,
+    uploader_id   TEXT NOT NULL,
+    created_at    TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, status);
 CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+"""
+
+# 依赖新增列的索引必须等迁移补列之后才能建，否则旧库启动会报「no such column」
+POST_MIGRATION_SCHEMA = """
+CREATE INDEX IF NOT EXISTS idx_messages_attachment ON messages(attachment_id);
 """
 
 
@@ -55,3 +71,5 @@ def init_db(db_path: Path | str) -> None:
     with get_connection(db_path) as conn:
         conn.executescript(SCHEMA)
         _ensure_column(conn, "devices", "ip", "TEXT")
+        _ensure_column(conn, "messages", "attachment_id", "TEXT")
+        conn.executescript(POST_MIGRATION_SCHEMA)

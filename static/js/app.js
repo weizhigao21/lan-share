@@ -6,7 +6,7 @@ const LS_DEVICE_NAME = "lan_share_device_name";
 function safeGet(key) {
   try {
     return localStorage.getItem(key);
-  } catch {
+  } catch (err) {
     return null;
   }
 }
@@ -14,7 +14,7 @@ function safeGet(key) {
 function safeSet(key, value) {
   try {
     localStorage.setItem(key, value);
-  } catch {
+  } catch (err) {
     /* 存储不可用时降级为"本次会话内有效"，不阻断功能 */
   }
 }
@@ -22,7 +22,7 @@ function safeSet(key, value) {
 function safeRemove(key) {
   try {
     localStorage.removeItem(key);
-  } catch {
+  } catch (err) {
     /* 忽略 */
   }
 }
@@ -34,11 +34,20 @@ const state = {
   peer: null,      // 当前会话对端 {id, name}
   messages: [],    // 当前会话消息
   unread: {},      // 对端 id -> 未读数
+  maxUploadSize: 0, // 服务端单文件上限（字节），0 表示未知
   ws: null,
 };
 
+let uploading = false;  // 是否正在上传（串行处理多文件，避免并发挤占带宽）
+
 function $(sel) {
   return document.querySelector(sel);
+}
+
+/* 绑定事件：元素不存在时静默跳过（老浏览器不支持可选链，统一用此写法） */
+function on(selector, event, handler) {
+  const el = $(selector);
+  if (el) el.addEventListener(event, handler);
 }
 
 function showView(viewSel) {
@@ -89,15 +98,31 @@ function setConnState(connected) {
   if (!dot) return;
   dot.classList.toggle("connected", connected);
   dot.title = connected ? "实时通道已连接" : "实时通道断开，重连中…";
+  // 断线期间常驻横幅提示，恢复后隐藏并 toast 通知
+  const banner = $("#connBanner");
+  if (banner) {
+    const wasHidden = banner.classList.contains("hidden");
+    banner.classList.toggle("hidden", connected);
+    if (connected && !wasHidden) showToast("实时连接已恢复");
+  }
+}
+
+/* 标签页标题显示未读总数：切到其他标签页时也能一眼看到 */
+const BASE_TITLE = "局域网信息互发";
+function updateTitle() {
+  const total = Object.values(state.unread).reduce((sum, n) => sum + n, 0);
+  document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
 }
 
 function renderDevices() {
   const list = $("#deviceList");
   list.innerHTML = "";
-  const onlineCount = state.devices.filter((d) => d.is_online).length;
-  $("#onlineCount").textContent = `(${state.devices.length} 台 · ${onlineCount} 在线)`;
+  // 设备列表只展示其他设备（自己保留在 state.devices 里，供消息渲染与身份校验使用）
+  const others = state.devices.filter((d) => d.id !== state.deviceId);
+  const onlineCount = others.filter((d) => d.is_online).length;
+  $("#onlineCount").textContent = `(${others.length} 台 · ${onlineCount} 在线)`;
 
-  const sorted = [...state.devices].sort(
+  const sorted = [...others].sort(
     (a, b) => (b.is_online - a.is_online) || a.name.localeCompare(b.name, "zh")
   );
 
@@ -109,30 +134,71 @@ function renderDevices() {
   sorted.forEach((d) => {
     const li = document.createElement("li");
     li.className = "device-item" + (state.peer && state.peer.id === d.id ? " active" : "");
-    const isMe = d.id === state.deviceId;
     const unread = state.unread[d.id] || 0;
+    // 离线设备允许移除（用于清理重复注册留下的旧身份）
+    const removable = !d.is_online;
     li.innerHTML = `
       <span class="status-dot ${d.is_online ? "online" : "offline"}"></span>
       <div class="device-info">
-        <div class="device-name">${escapeHtml(d.name)}${isMe ? " <em>(我)</em>" : ""}</div>
+        <div class="device-name">${escapeHtml(d.name)}</div>
         ${d.ip ? `<div class="device-ip">${escapeHtml(d.ip)}</div>` : ""}
       </div>
       ${unread ? `<span class="badge">${unread}</span>` : ""}
+      ${removable ? '<button type="button" class="device-remove" title="移除该离线设备">✕</button>' : ""}
       <span class="device-state ${d.is_online ? "online" : ""}">${d.is_online ? "在线" : "离线"}</span>`;
     li.addEventListener("click", () => openChat(d));
+    const removeBtn = li.querySelector(".device-remove");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeDevice(d);
+      });
+    }
     list.appendChild(li);
   });
+}
+
+/** 移除一台离线设备（连带与它的消息、附件文件） */
+async function removeDevice(device) {
+  const ok = confirm(
+    `移除设备「${device.name}」？\n与它之间的聊天记录和已发送的文件会一并删除，此操作不可撤销。`,
+  );
+  if (!ok) return;
+  try {
+    await API.deleteDevice(device.id);
+    if (state.peer && state.peer.id === device.id) {
+      state.peer = null;
+      state.messages = [];
+      document.body.classList.remove("chatting");
+      $("#chatPeerName").textContent = "选择设备开始聊天";
+      $("#chatPeerState").textContent = "";
+      enableInput(false);
+      $("#messageList").innerHTML = '<div class="empty-hint">从左侧选择一台设备开始聊天</div>';
+    }
+    delete state.unread[device.id];
+    updateTitle();
+    setStatus("已移除设备：" + device.name);
+    loadDevices();
+  } catch (err) {
+    setStatus("移除失败: " + err.message);
+  }
 }
 
 /* ---------- 会话 ---------- */
 
 async function openChat(device) {
   state.peer = { id: device.id, name: device.name };
+  const wasChatting = document.body.classList.contains("chatting");
   state.unread[device.id] = 0;
+  updateTitle();
   $("#chatPeerName").textContent = device.name;
   $("#chatPeerState").textContent = device.is_online ? "在线" : "离线";
   $("#backBtn").classList.toggle("hidden", window.innerWidth >= 768);
   document.body.classList.add("chatting");
+  // 手机端压入一条历史记录：系统返回键先退到设备列表，而不是退出整个页面
+  if (window.innerWidth < 768 && !wasChatting && !(history.state && history.state.chat)) {
+    history.pushState({ chat: true }, "");
+  }
 
   try {
     state.messages = await API.history(state.deviceId, device.id);
@@ -146,12 +212,24 @@ async function openChat(device) {
 }
 
 function backToDevices() {
+  // 手机端有聊天历史记录时交给 popstate 统一收尾，保持历史栈干净
+  if (window.innerWidth < 768 && history.state && history.state.chat) {
+    history.back();
+    return;
+  }
   document.body.classList.remove("chatting");
 }
+
+window.addEventListener("popstate", () => {
+  if (document.body.classList.contains("chatting")) {
+    document.body.classList.remove("chatting");
+  }
+});
 
 function enableInput(enabled) {
   $("#messageInput").disabled = !enabled;
   $("#sendBtn").disabled = !enabled;
+  $("#attachBtn").disabled = !enabled || uploading;
 }
 
 /* ---------- 消息渲染 ---------- */
@@ -166,6 +244,245 @@ function renderMessages() {
   scrollToBottom();
 }
 
+/* ---------- 文件消息 ---------- */
+
+const PREVIEW_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"];
+const VIDEO_TYPES = ["video/mp4", "video/webm", "video/ogg"];
+const AUDIO_TYPES = [
+  "audio/mpeg", "audio/mp4", "audio/aac",
+  "audio/wav", "audio/x-wav", "audio/ogg", "audio/flac",
+];
+/* 超大图不直接内嵌对话框（手机浏览器内存有限），回落为文件卡手动下载 */
+const INLINE_IMAGE_MAX = 15 * 1024 * 1024;
+
+function isPreviewable(contentType) {
+  return PREVIEW_TYPES.includes(contentType);
+}
+
+function formatSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[i]}`;
+}
+
+/* 保留期提示：expires_at 为空表示永久保留（保留期配置为 0） */
+function retentionText(expiresAt) {
+  if (!expiresAt) return "";
+  const left = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(left)) return "";
+  if (left <= 0) return "即将清理";
+  const days = Math.ceil(left / 86400000);
+  if (days <= 1) {
+    return Math.max(1, Math.ceil(left / 3600000)) + " 小时后清理";
+  }
+  return days + " 天后清理";
+}
+
+function renderFileCard(att) {
+  const card = document.createElement("div");
+  card.className = "file-card";
+  const url = API.fileUrl(att, state.deviceId, false);
+
+  if (isPreviewable(att.content_type)) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.title = "点击下载原图";
+    const img = document.createElement("img");
+    img.className = "file-thumb";
+    img.src = API.fileUrl(att, state.deviceId, true);
+    img.alt = att.name;
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.classList.add("hidden"));
+    link.appendChild(img);
+    card.appendChild(link);
+  }
+
+  const body = document.createElement("div");
+  body.className = "file-body";
+  const name = document.createElement("div");
+  name.className = "file-name";
+  name.textContent = att.name;
+  name.title = att.name;
+  const meta = document.createElement("div");
+  meta.className = "file-meta";
+  meta.textContent = [formatSize(att.size), retentionText(att.expires_at)]
+    .filter(Boolean)
+    .join(" · ");
+  const download = document.createElement("button");
+  download.type = "button";
+  download.className = "file-download";
+  download.textContent = "下载";
+  download.addEventListener("click", () => downloadAttachment(att));
+  body.append(name, meta, download);
+  card.appendChild(body);
+  return card;
+}
+
+/* 附件按类型分流：图片/视频/音频在线直接展开（双方在线即"自动接收"体验），
+   其他类型与超大图片保留文件卡 + 手动下载。加载失败统一回落到文件卡。 */
+function renderAttachment(att) {
+  const ct = att.content_type || "";
+  if (PREVIEW_TYPES.includes(ct) && att.size <= INLINE_IMAGE_MAX) {
+    return renderImageMsg(att);
+  }
+  if (VIDEO_TYPES.includes(ct)) return renderVideoMsg(att);
+  if (AUDIO_TYPES.includes(ct)) return renderAudioMsg(att);
+  return renderFileCard(att);
+}
+
+function fallbackToCard(att, mediaEl) {
+  mediaEl.addEventListener("error", () => {
+    const card = renderFileCard(att);
+    if (mediaEl.parentNode) mediaEl.parentNode.replaceWith(card);
+  });
+}
+
+function renderImageMsg(att) {
+  const wrap = document.createElement("div");
+  wrap.className = "media-msg";
+  const img = document.createElement("img");
+  img.className = "img-msg";
+  img.src = API.fileUrl(att, state.deviceId, true);
+  img.alt = att.name;
+  img.loading = "lazy";
+  img.addEventListener("click", () => openLightbox(img.src));
+  fallbackToCard(att, img);
+  wrap.appendChild(img);
+  return wrap;
+}
+
+function renderVideoMsg(att) {
+  const wrap = document.createElement("div");
+  wrap.className = "media-msg";
+  const video = document.createElement("video");
+  video.className = "video-msg";
+  video.controls = true;
+  video.preload = "metadata";
+  video.playsInline = true;  // iOS 内联播放，不强制全屏
+  video.src = API.fileUrl(att, state.deviceId, true);
+  fallbackToCard(att, video);
+  wrap.appendChild(video);
+  wrap.appendChild(buildMediaMeta(att));
+  return wrap;
+}
+
+function renderAudioMsg(att) {
+  const wrap = document.createElement("div");
+  wrap.className = "media-msg";
+  const audio = document.createElement("audio");
+  audio.className = "audio-msg";
+  audio.controls = true;
+  audio.preload = "metadata";
+  audio.src = API.fileUrl(att, state.deviceId, true);
+  fallbackToCard(att, audio);
+  wrap.appendChild(audio);
+  wrap.appendChild(buildMediaMeta(att));
+  return wrap;
+}
+
+function buildMediaMeta(att) {
+  const meta = document.createElement("div");
+  meta.className = "file-meta media-meta";
+  meta.textContent = [att.name, formatSize(att.size), retentionText(att.expires_at)]
+    .filter(Boolean)
+    .join(" · ");
+  return meta;
+}
+
+/* 图片灯箱：全屏黑底看原图，点击任意处关闭 */
+function openLightbox(src) {
+  let ov = document.getElementById("lightbox");
+  if (!ov) {
+    ov = document.createElement("div");
+    ov.className = "lightbox";
+    const big = document.createElement("img");
+    big.alt = "图片预览";
+    ov.appendChild(big);
+    ov.addEventListener("click", () => ov.classList.add("hidden"));
+    document.body.appendChild(ov);
+  }
+  ov.querySelector("img").src = src;
+  ov.classList.remove("hidden");
+}
+
+/* 已被自动清理的文件：保留一条灰色记录，聊天时间线不断档 */
+function renderExpiredCard(name) {
+  const card = document.createElement("div");
+  card.className = "file-card file-expired";
+  const body = document.createElement("div");
+  body.className = "file-body";
+  const title = document.createElement("div");
+  title.className = "file-name";
+  title.textContent = name || "文件";
+  title.title = name || "";
+  const meta = document.createElement("div");
+  meta.className = "file-meta";
+  meta.textContent = "文件已过期清理，无法再下载";
+  body.append(title, meta);
+  card.appendChild(body);
+  return card;
+}
+
+/* 文件下载：直接把带文件名的下载地址交给浏览器原生下载器。
+   不再走 fetch→Blob：Blob 的地址是一串随机 UUID，安卓浏览器/内置 WebView
+   一旦忽略 download 属性，就只能拿 UUID 当文件名，再按 octet-stream 补成 .bin
+   （这就是"下载后文件名变成一串数字、后缀变 bin"的原因）。
+   现在地址末段就是原文件名，任何下载器都能取到正确的名字与扩展名；
+   大文件也不会被读进内存。 */
+function isInAppBrowser() {
+  return /MicroMessenger|QQ\/|Weibo|DingTalk|AliApp|Feishu|Lark|baiduboxapp|Quark|UCBrowser|MQQBrowser/i
+    .test(navigator.userAgent);
+}
+
+async function downloadAttachment(att) {
+  const url = API.fileUrl(att, state.deviceId, false);
+
+  /* 已过保留期的文件先探测一次（下载器本来也会发 HEAD）：
+     已被后台清理时给出明确提示，而不是把用户跳到一页 JSON 报错。
+     未过期的文件不做预检，保持点击即下载的同步手势。 */
+  if (att.expires_at && new Date(att.expires_at).getTime() <= Date.now()) {
+    try {
+      const probe = await fetch(url, { method: "HEAD" });
+      if (probe.status === 404) {
+        setStatus("文件已过期清理，无法再下载：" + att.name);
+        return;
+      }
+      if (probe.status === 403) {
+        setStatus("无权下载该文件");
+        return;
+      }
+    } catch (err) {
+      /* 探测失败就照常下载，交给浏览器处理 */
+    }
+  }
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = att.name;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () {
+    if (a.parentNode) a.parentNode.removeChild(a);
+  }, 0);
+
+  if (isInAppBrowser()) {
+    setStatus("已开始下载：" + att.name + "；若没反应，请点右上角「···」→ 在浏览器打开本页");
+  } else {
+    setStatus("已开始下载：" + att.name);
+  }
+}
+
 function appendMessageDOM(list, msg, opts) {
   if (opts.offline) {
     const tip = document.createElement("div");
@@ -177,7 +494,15 @@ function appendMessageDOM(list, msg, opts) {
   div.className = "msg " + (msg.sender_id === state.deviceId ? "mine" : "theirs");
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = msg.content;
+  if (msg.msg_type === "file" && msg.attachment) {
+    bubble.classList.add("file-bubble");
+    bubble.appendChild(renderAttachment(msg.attachment));
+  } else if (msg.msg_type === "file_expired") {
+    bubble.classList.add("file-bubble", "expired-bubble");
+    bubble.appendChild(renderExpiredCard(msg.content));
+  } else {
+    bubble.textContent = msg.content;
+  }
   div.appendChild(bubble);
   list.appendChild(div);
 }
@@ -208,6 +533,68 @@ async function sendMessage() {
   }
 }
 
+/* ---------- 文件上传 ---------- */
+
+function showUploadProgress(label, ratio) {
+  $("#uploadBar").classList.remove("hidden");
+  $("#uploadLabel").textContent = label;
+  $("#progressFill").style.width = `${Math.round((ratio || 0) * 100)}%`;
+}
+
+function hideUploadProgress() {
+  $("#uploadBar").classList.add("hidden");
+  $("#progressFill").style.width = "0%";
+}
+
+/** 串行上传选中的多个文件；每个文件成功即生成一条消息并渲染 */
+async function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length || !state.peer || uploading) return;
+
+  uploading = true;
+  $("#attachBtn").disabled = true;
+  const peerId = state.peer.id;
+
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    const limit = state.maxUploadSize;
+    if (limit && file.size > limit) {
+      setStatus(
+        "「" + file.name + "」有 " + formatSize(file.size) +
+        "，超过单文件上限 " + formatSize(limit) + "，已跳过"
+      );
+      continue;
+    }
+    const label = files.length > 1
+      ? `上传 ${i + 1}/${files.length}：${file.name}`
+      : `上传：${file.name}`;
+    showUploadProgress(label, 0);
+    try {
+      const msg = await API.uploadFile(
+        state.deviceId,
+        peerId,
+        file,
+        (ratio) => showUploadProgress(label, ratio),
+      );
+      // 上传途中切换了会话：不把消息错插进当前会话，仅提示已发送
+      if (state.peer && state.peer.id === peerId) {
+        state.messages.push(msg);
+        appendMessage(msg, {});
+      } else {
+        setStatus("文件已发送（会话已切换）");
+      }
+    } catch (err) {
+      setStatus(err.message);
+      if (err.message === "已取消上传") break;
+    }
+  }
+
+  uploading = false;
+  hideUploadProgress();
+  $("#attachBtn").disabled = !state.peer;
+  $("#fileInput").value = "";
+}
+
 /* ---------- WebSocket 事件 ---------- */
 
 function onWsMessage(msg) {
@@ -224,6 +611,7 @@ function onWsMessage(msg) {
       } else {
         state.unread[peerId] = (state.unread[peerId] || 0) + 1;
         renderDevices();
+        updateTitle();
       }
       break;
     }
@@ -296,7 +684,7 @@ async function checkDeviceValid() {
   try {
     const devices = await API.listDevices();
     return devices.some((d) => d.id === state.deviceId);
-  } catch {
+  } catch (err) {
     return null;
   }
 }
@@ -309,6 +697,7 @@ function resetIdentity() {
   }
   safeRemove(LS_DEVICE_ID);
   safeRemove(LS_DEVICE_NAME);
+  API.forgetDevice();  // 同步清掉服务端身份 Cookie，否则下次会被"恢复"回失效身份
   state.deviceId = null;
   state.deviceName = null;
   state.devices = [];
@@ -352,49 +741,179 @@ async function enterApp() {
   startWs();
 }
 
-function init() {
-  // 显示当前设备自己的 IP（服务端从连接来源获取，非服务器地址）
-  const urlEl = $("#accessUrl");
-  if (urlEl) {
-    urlEl.textContent = "…";
-    API.getMyIp()
-      .then((ip) => {
-        if (urlEl) urlEl.textContent = ip;
-      })
-      .catch(() => {
-        if (urlEl) urlEl.textContent = "";
-      });
-  }
+async function init() {
+  showMyIp();
+  loadServerMeta();
   if (state.deviceId && state.deviceName) {
     enterApp();
-  } else {
-    showView("#registerView");
+    return;
   }
+
+  // localStorage 为空（隐私模式 / 被内置浏览器清理 / 换了浏览器）：
+  // 先问服务端要回上次的身份，避免又注册出一个同名设备。
+  let restored = null;
+  try {
+    restored = await API.whoAmI();
+  } catch (err) {
+    restored = null;
+  }
+  if (restored && restored.id && restored.name) {
+    state.deviceId = restored.id;
+    state.deviceName = restored.name;
+    safeSet(LS_DEVICE_ID, restored.id);
+    safeSet(LS_DEVICE_NAME, restored.name);
+    enterApp();
+    setStatus("已恢复设备身份：" + restored.name);
+    return;
+  }
+
+  showView("#registerView");
 }
 
-/* 全局错误兜底：任何 JS 异常都在页面上显示，避免"空白页"无从排查 */
+/* 取服务端的单文件上限，用于上传前本地校验（拿不到就退化为只在服务端拦截） */
+function loadServerMeta() {
+  API.getMeta()
+    .then((meta) => {
+      if (meta && meta.max_upload_size) {
+        state.maxUploadSize = meta.max_upload_size;
+      }
+    })
+    .catch(() => {
+      /* 忽略：不影响上传，服务端仍会兜底 */
+    });
+}
+
+/* 显示当前设备自己的 IP（服务端从连接来源获取，非服务器地址） */
+function showMyIp() {
+  const urlEl = $("#accessUrl");
+  if (!urlEl) return;
+  urlEl.textContent = "…";
+  API.getMyIp()
+    .then((ip) => {
+      urlEl.textContent = ip;
+    })
+    .catch(() => {
+      urlEl.textContent = "";
+    });
+}
+
+/* 全局错误兜底：只在页面底部挂一条可关闭的提示，绝不隐藏页面。
+   内置浏览器/WebView 注入的第三方脚本报错很常见（例如 loadDownloads is not defined），
+   那些与本项目无关，直接忽略——否则一条无关报错就会把整个聊天界面顶掉。 */
 window.addEventListener("error", (e) => {
-  const loc = e.filename ? ` (${e.filename.split("/").pop()}:${e.lineno})` : "";
-  showFatalError((e.message || "脚本执行出错") + loc);
+  const file = String(e.filename || "");
+  if (file.indexOf("/js/") === -1) return;
+  const name = file.split("/").pop();
+  showScriptWarning((e.message || "脚本执行出错") + " (" + name + ":" + e.lineno + ")");
 });
 
-function showFatalError(message) {
-  document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
-  const host = $("#registerView");
-  if (!host) return;
-  host.classList.remove("hidden");
-  let box = document.querySelector(".fatal-error");
-  if (!box) {
-    box = document.createElement("div");
-    box.className = "fatal-error";
-    host.appendChild(box);
+function showScriptWarning(message) {
+  let el = document.getElementById("scriptWarning");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "scriptWarning";
+    el.className = "script-warning";
+    el.title = "点击关闭";
+    el.addEventListener("click", () => {
+      el.className = "script-warning hide";
+    });
+    document.body.appendChild(el);
   }
-  box.textContent = "页面出错：" + message;
+  el.textContent = "脚本异常（不影响基本使用，可刷新重试）：" + message;
+  el.className = "script-warning";
+}
+
+/* ---------- 拖拽文件夹：递归展开成文件列表 ---------- */
+
+const DROP_MAX_FILES = 300;   // 一次拖入最多取这么多文件，防止误拖整个盘
+const DROP_MAX_DEPTH = 8;     // 目录递归深度上限
+
+function readAllDirEntries(reader) {
+  return new Promise(function (resolve) {
+    const all = [];
+    (function next() {
+      reader.readEntries(
+        function (batch) {
+          if (!batch.length) {
+            resolve(all);
+            return;
+          }
+          for (let i = 0; i < batch.length; i += 1) all.push(batch[i]);
+          next();
+        },
+        function () {
+          resolve(all);
+        }
+      );
+    })();
+  });
+}
+
+function collectEntry(entry, out, depth) {
+  if (!entry || out.length >= DROP_MAX_FILES) return Promise.resolve();
+  if (entry.isFile) {
+    return new Promise(function (resolve) {
+      entry.file(
+        function (file) {
+          out.push(file);
+          resolve();
+        },
+        function () {
+          resolve();
+        }
+      );
+    });
+  }
+  if (entry.isDirectory) {
+    if (depth >= DROP_MAX_DEPTH) return Promise.resolve();
+    return readAllDirEntries(entry.createReader()).then(function (entries) {
+      return entries.reduce(function (chain, child) {
+        return chain.then(function () {
+          return collectEntry(child, out, depth + 1);
+        });
+      }, Promise.resolve());
+    });
+  }
+  return Promise.resolve();
+}
+
+/* 把 DataTransfer 展开成 File[]：文件夹会被递归读取其内容 */
+function filesFromDataTransfer(dt) {
+  const fallback = Array.prototype.slice.call((dt && dt.files) || []);
+  if (!dt || !dt.items || !dt.items.length) return Promise.resolve(fallback);
+
+  const entries = [];
+  for (let i = 0; i < dt.items.length; i += 1) {
+    const item = dt.items[i];
+    if (item.kind !== "file") continue;
+    let entry = null;
+    if (typeof item.webkitGetAsEntry === "function") entry = item.webkitGetAsEntry();
+    if (!entry && typeof item.getAsFile === "function") {
+      const file = item.getAsFile();
+      if (file) {
+        // 老浏览器没有 entry API：退化成一个"只含单文件"的伪 entry
+        entry = { isFile: true, file: function (cb) { cb(file); } };
+      }
+    }
+    if (entry) entries.push(entry);
+  }
+  if (!entries.length) return Promise.resolve(fallback);
+
+  const out = [];
+  return entries
+    .reduce(function (chain, entry) {
+      return chain.then(function () {
+        return collectEntry(entry, out, 0);
+      });
+    }, Promise.resolve())
+    .then(function () {
+      return out;
+    });
 }
 
 /* ---------- 事件绑定 ---------- */
 
-$("#registerBtn")?.addEventListener("click", async () => {
+on("#registerBtn", "click", async () => {
   const name = $("#deviceNameInput").value.trim();
   const errorEl = $("#registerError");
   if (!name) {
@@ -416,16 +935,65 @@ $("#registerBtn")?.addEventListener("click", async () => {
   }
 });
 
-$("#deviceNameInput")?.addEventListener("keydown", (e) => {
+on("#deviceNameInput", "keydown", (e) => {
   if (e.key === "Enter") $("#registerBtn").click();
 });
 
-$("#sendBtn")?.addEventListener("click", sendMessage);
-$("#messageInput")?.addEventListener("keydown", (e) => {
+on("#sendBtn", "click", sendMessage);
+on("#messageInput", "keydown", (e) => {
   if (e.key === "Enter") sendMessage();
 });
-$("#backBtn")?.addEventListener("click", backToDevices);
-$("#clearHistoryBtn")?.addEventListener("click", clearHistory);
-$("#renameBtn")?.addEventListener("click", renameDevice);
+on("#attachBtn", "click", () => {
+  const input = $("#fileInput");
+  if (input) input.click();
+});
+on("#fileInput", "change", (e) => handleFiles(e.target.files));
+on("#cancelUploadBtn", "click", () => API.abortUpload());
 
-init();
+/* 拖拽文件到消息区直接发送 */
+const dropZone = $("#messageList");
+if (dropZone) {
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone.addEventListener("dragleave", (e) => {
+    if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove("drag-over");
+  });
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    if (!state.peer) {
+      setStatus("请先选择一台设备");
+      return;
+    }
+    const dt = e.dataTransfer;
+    setStatus("正在读取拖入的内容…");
+    filesFromDataTransfer(dt)
+      .then((files) => {
+        if (!files.length) {
+          setStatus("没有可上传的文件");
+          return;
+        }
+        if (files.length > 1) {
+          setStatus("已读取 " + files.length + " 个文件，开始上传");
+        }
+        handleFiles(files);
+      })
+      .catch(() => {
+        setStatus("读取拖入内容失败，请改用回形针按钮选择文件");
+      });
+  });
+}
+
+on("#backBtn", "click", backToDevices);
+on("#clearHistoryBtn", "click", clearHistory);
+on("#renameBtn", "click", renameDevice);
+
+init().catch(() => {
+  // 恢复流程异常时退回注册页，保证页面永远可用
+  showView("#registerView");
+});
+
+/* 供 index.html 的启动兜底检测：能执行到这里说明脚本解析与初始化正常 */
+window.__lanStarted = true;

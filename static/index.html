@@ -3,8 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta name="theme-color" content="#1d9e75">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <title>局域网信息互发</title>
-  <link rel="stylesheet" href="/css/style.css?v=0.2.5">
+  <link rel="stylesheet" href="/css/style.css?v=0.4.0">
 </head>
 <body>
   <header class="topbar">
@@ -19,6 +25,8 @@
       <button id="renameBtn" class="btn-ghost hidden">改名</button>
     </div>
   </header>
+
+  <div id="connBanner" class="conn-banner hidden">实时连接已断开，正在重连…</div>
 
   <main class="main">
     <!-- 首次进入：设置设备名称 -->
@@ -56,7 +64,19 @@
         <div id="messageList" class="message-list">
           <div class="empty-hint">从左侧选择一台设备开始聊天</div>
         </div>
+        <div id="uploadBar" class="upload-bar hidden">
+          <span id="uploadLabel" class="upload-label">正在上传…</span>
+          <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+          <button id="cancelUploadBtn" class="btn-ghost" type="button">取消</button>
+        </div>
         <div id="inputBar" class="input-bar">
+          <input id="fileInput" type="file" multiple class="hidden">
+          <button id="attachBtn" class="btn-icon" type="button" title="发送文件" aria-label="发送文件" disabled>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M16.5 6.5v9.75a4.25 4.25 0 0 1-8.5 0V6.25a2.75 2.75 0 0 1 5.5 0v9.5a1.25 1.25 0 0 1-2.5 0V7.5"
+                    fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
           <input id="messageInput" type="text" maxlength="2000" placeholder="输入字符消息…" autocomplete="off" disabled>
           <button id="sendBtn" class="btn-primary" disabled>发送</button>
         </div>
@@ -64,8 +84,20 @@
     </div>
   </main>
 
-  <script src="/js/api.js?v=0.2.5"></script>
-  <script src="/js/ws.js?v=0.2.5"></script>
-  <script src="/js/app.js?v=0.2.5"></script>
+  <div id="bootError" class="boot-error hidden">
+    <strong>页面脚本没能正常加载</strong>
+    <p>浏览器可能版本过旧，或缓存了旧文件。请用系统浏览器 / Chrome 打开本页，或清理缓存后重新刷新。</p>
+  </div>
+
+  <script src="/js/api.js?v=0.4.0"></script>
+  <script src="/js/ws.js?v=0.4.0"></script>
+  <script src="/js/app.js?v=0.4.0"></script>
+  <script>
+    /* ES5 兜底：若 app.js 因内核过旧/加载失败而没执行到底，给出可见提示而不是白屏 */
+    if (!window.__lanStarted) {
+      var bootBox = document.getElementById("bootError");
+      if (bootBox) bootBox.className = "boot-error";
+    }
+  </script>
 </body>
 </html>
